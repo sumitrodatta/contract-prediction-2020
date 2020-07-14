@@ -82,6 +82,7 @@ create_data<-function(x){
                   .names="{col}_last_3_yrs")) %>%
     inner_join(.,x) %>%
     mutate(ws_per_48_last_3_yrs=ws_last_3_yrs/mp_last_3_yrs*48) %>%
+    #recalc percentages
     mutate(fg_percent_last_3_yrs=
              ifelse(fga_last_3_yrs==0,0,fg_last_3_yrs/fga_last_3_yrs),
            x3p_percent_last_3_yrs=
@@ -117,6 +118,7 @@ advanced_and_totals_train_set<-create_data(free_agents)
 
 
 ## ----targets_corr, echo=FALSE,fig.height=3.75,fig.width=7.5------------------------------------------
+#plot first year salary against contract length
 advanced_and_totals_train_set %>% 
   ggplot(aes(x=factor(contract_yrs),y=first_year_percent_of_cap)) + 
   geom_boxplot() + geom_jitter(alpha=0.1,width=0.2) + 
@@ -129,6 +131,7 @@ advanced_and_totals_train_set %>%
 
 
 ## ----ws_vs_salary, echo=FALSE,fig.height=3.75,fig.width=7.5------------------------------------------
+#plot win shares vs salary, color points based on contract length
 free_agents %>%
   ggplot(aes(x=first_year_percent_of_cap,y=ws,color=factor(contract_yrs))) + 
   geom_point() +
@@ -141,6 +144,7 @@ free_agents %>%
 
 
 ## ----contracts_by_season, echo=FALSE,fig.height=4,fig.width=7.5--------------------------------------
+#plot distribution of contracts by season as percentage of total contracts given out
 advanced_and_totals_train_set %>%
   ggplot(aes(x=factor(season),fill=factor(contract_yrs))) +
   geom_bar(aes(y=..count../tapply(..count.., ..x.. ,sum)[..x..]), 
@@ -152,10 +156,12 @@ advanced_and_totals_train_set %>%
 
 
 ## ----svm_explain, out.width="50%", fig.cap="H1 does not separate the classes. H2 does, but only with a small margin. H3 separates them with the maximal margin. By User:ZackWeinberg, based on PNG version by User:Cyc - This file was derived from: Svm separating hyperplanes.png, CC BY-SA 3.0, https://commons.wikimedia.org/w/index.php?curid=22877598",echo=FALSE----
+#svm graphic from wikipedia
 knitr::include_graphics("SVM2.png")
 
 
 ## ----actual_values,include=FALSE---------------------------------------------------------------------
+#remove actuals to check against predictions
 actual_values=advanced_and_totals_train_set %>% 
   select(1:8,contract_yrs,first_year_percent_of_cap)
 
@@ -170,6 +176,7 @@ get_5_top_important<- function(model){
 
 ## ----model_table_func, include=FALSE-----------------------------------------------------------------
 get_yrs_metrics<-function(x,ml_method,first=TRUE){
+  #base newdata off whether variable was predicted first or second
   if (first==TRUE){
     vec=predict(x,newdata=advanced_and_totals_train_set %>% ungroup() %>% 
                   select(-c(seas_id:birth_year,first_year_percent_of_cap)))
@@ -178,9 +185,12 @@ get_yrs_metrics<-function(x,ml_method,first=TRUE){
     vec=predict(x,newdata=advanced_and_totals_train_set %>% ungroup() %>% 
                   select(-c(seas_id:birth_year)))
   }
+  #how many correct predictions
   percent_correct=sum(actual_values$contract_yrs==round(vec,0))/length(vec)
+  #how many predictions off by more than one year
   off_by_more_than_one=sum(abs(actual_values$contract_yrs-round(vec,0))>1)/
     length(vec)
+  #how many predictions are for max contract length of 5
   num_max_yr_predicts=sum(round(vec,0)==5)
   mean_abs_error=min(x$results[["MAE"]])
   resid_mean_sq_error=min(x$results[["RMSE"]])
@@ -190,6 +200,7 @@ get_yrs_metrics<-function(x,ml_method,first=TRUE){
                  RMSE=resid_mean_sq_error))
 }
 get_sal_metrics<-function(x,ml_method,first=FALSE){
+  #base newdata off whether variable was predicted first or second
   if (first==FALSE){
     vec=predict(x,newdata=advanced_and_totals_train_set %>% ungroup() %>% 
                   select(-c(seas_id:birth_year)))
@@ -198,6 +209,7 @@ get_sal_metrics<-function(x,ml_method,first=FALSE){
     vec=predict(x,newdata=advanced_and_totals_train_set %>% ungroup() %>% 
                   select(-c(seas_id:birth_year,contract_yrs)))
   }
+  #how many predictions are off by more than 5%
   off_by_more_than_five_percent=
     sum(abs(actual_values$first_year_percent_of_cap-vec)>0.05)/length(vec)
   mean_abs_error=min(x$results[["MAE"]])
@@ -279,6 +291,9 @@ models %>% knitr::kable()
 
 
 ## ----yrs_predict_train-------------------------------------------------------------------------------
+#best performers are random forests, but have hard time predicting five years
+#if any models predict five years, use that prediction (since rare)
+#else use median of rborist, ranger and svm
 rborist_yrs_vec=predict(rborist_yrs,newdata=advanced_and_totals_train_set %>% 
                           ungroup() %>% 
                           select(-c(seas_id:birth_year,first_year_percent_of_cap)))
@@ -419,6 +434,7 @@ models %>% knitr::kable()
 
 
 ## ----sal_predict_train-------------------------------------------------------------------------------
+#take medians sinces MAEs close
 rborist_sal_vec=predict(rborist_sal,newdata=advanced_and_totals_train_set %>% 
                           ungroup() %>% 
                           select(-c(seas_id:birth_year,contract_yrs)))
@@ -507,12 +523,14 @@ advanced_and_totals_eval_set<-create_data(fa_2020)
 
 
 ## ----removed, echo=FALSE-----------------------------------------------------------------------------
+#players unable to make predictions on (no contract year stats)
 anti_join(fa_2020,advanced_and_totals_eval_set) %>% 
   select(player,type) %>% knitr::kable() %>%
   kable_styling(latex_options = "HOLD_position",fixed_thead = T) %>% row_spec(0,bold=T)
 
 
 ## ----predicting_wrappers, include=FALSE--------------------------------------------------------------
+#refactored so code doesn't repeat
 predict_yrs<-function(x,first=TRUE){
   if (first==TRUE){
     dataset=advanced_and_totals_eval_set %>% ungroup() %>% 
@@ -539,6 +557,8 @@ predict_sal<-function(x,first=FALSE){
 }
 
 ## ----------------------------------------------------------------------------------------------------
+#Y1S2 model, take max prediction if any predict
+#else take median of rborist, ranger and svm
 lin_2020_yrs_first=predict_yrs(lin_yrs)
 knn_2020_yrs_first=predict_yrs(knn_yrs)
 rpart_2020_yrs_first=predict_yrs(rpart_yrs)
@@ -554,6 +574,7 @@ yrs_first_vec=ifelse(round(rowMaxs(cbind(
 y1s2<-advanced_and_totals_eval_set %>% 
   select(-contract_yrs) %>% add_column(contract_yrs=yrs_first_vec)
 
+#take median of salaries
 lin_2020_sal_second=predict_sal(lin_sal_second)
 knn_2020_sal_second=predict_sal(knn_sal_second)
 ranger_2020_sal_second=predict_sal(ranger_sal_second)
@@ -566,6 +587,7 @@ sal_second_vec=rowMedians(cbind(rborist_2020_sal_second,ranger_2020_sal_second,
 
 
 ## ----------------------------------------------------------------------------------------------------
+#S1Y2 model, take median of salaries
 lin_2020_sal_first=predict_sal(lin_sal,first=TRUE)
 knn_2020_sal_first=predict_sal(knn_sal,first=TRUE)
 ranger_2020_sal_first=predict_sal(ranger_sal,first=TRUE)
@@ -580,6 +602,7 @@ s1y2<-advanced_and_totals_eval_set %>%
   select(-first_year_percent_of_cap) %>% 
   add_column(first_year_percent_of_cap=sal_first_vec)
 
+#take median of all years models except KNN
 lin_2020_yrs_second=predict_yrs(lin_yrs_second,first=FALSE)
 rpart_2020_yrs_second=predict_yrs(rpart_yrs_second,first=FALSE)
 ranger_2020_yrs_second=predict_yrs(ranger_yrs_second,first=FALSE)
